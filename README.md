@@ -1,2 +1,2 @@
-# stock-lstm-embbeding
-Stock price prediction using lstm with embbeding
+# stock-lstm-embedding
+Stock price prediction using lstm with embedding
