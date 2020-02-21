@@ -18,28 +18,39 @@ BATCH_SIZE = 1
 
 
 class StockNN(nn.Module):
-    def __init__(self):
+    def __init__(
+        self,
+        num_of_stocks=NUM_OF_STOCKS,
+        input_size=1,
+        embedding_dim=EMBEDDING_SIZE,
+        hidden_layer_size=100,
+        output_size=1,
+    ):
         super(StockNN, self).__init__()
-        self.embeds = nn.Embedding(NUM_OF_STOCKS, EMBEDDING_SIZE)
+        self.hidden_layer_size = hidden_layer_size
+
+        self.embeds = nn.Embedding(num_of_stocks, embedding_dim)
         self.lstm = nn.LSTM(
-            input_size=EMBEDDING_SIZE + INPUT_SIZE,
-            hidden_size=LSTM_HID_SIZE,
+            input_size=embedding_dim + input_size,
+            hidden_size=hidden_layer_size,
             num_layers=1,
         )
-        self.fc = nn.Linear(LSTM_HID_SIZE, INPUT_SIZE)
+        self.fc = nn.Linear(hidden_layer_size, output_size)
+
+        self.hidden_cell = (
+            torch.zeros(1, 1, self.hidden_layer_size),
+            torch.zeros(1, 1, self.hidden_layer_size),
+        )
 
     def forward(self, stock_idx, price):
-        x = torch.cat(
+        assert len(stock_idx) == len(price)
+        input_seq = torch.cat(
             (self.embeds(torch.tensor(stock_idx)), torch.FloatTensor(price)), dim=1
-        ).view(-1, 1, EMBEDDING_SIZE + INPUT_SIZE)
+        ).view(len(stock_idx), 1, -1)
 
-        out, hidden = self.lstm(x)
-
-        out = out.contiguous().view(-1, LSTM_HID_SIZE)
-        # out = out.view(-1, self.num_flat_features(out))
-        out = self.fc(out)
-
-        return out, hidden
+        lstm_out, self.hidden_cell = self.lstm(input_seq, self.hidden_cell)
+        predictions = self.fc(lstm_out.view(len(input_seq), -1))
+        return predictions[-1]
 
 
 def train_nn(optimizer, net, data, num_of_epochs=10, print_every=200):
