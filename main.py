@@ -54,8 +54,8 @@ class StockNN(nn.Module):
 
 
 def train_nn(optimizer, net, data, num_of_epochs=10, print_every=200):
-    (x_train, y_train, x_test, y_test) = data
-    stock_inx = 1  # TODO: Fix
+    (x_train, y_train, x_test, y_test) = map(torch.FloatTensor, data)
+    stock_inx = 1  # TODO: Fixd
     train_loss_tracking = []
     test_loss_tracking = []
     for epoch in range(num_of_epochs):
@@ -66,51 +66,36 @@ def train_nn(optimizer, net, data, num_of_epochs=10, print_every=200):
             # get the inputs
             # inputs, labels = data
             inputs = x_train[i]
-            outputs = y_train[i]
+            labels = y_train[i]
 
             # inputs = inputs.cuda()  # -- For GPU
             # labels = labels.cuda()  # -- For GPU
 
             # zero the parameter gradients
             optimizer.zero_grad()
+            net.hidden_cell = (
+                torch.zeros(1, 1, net.hidden_layer_size),
+                torch.zeros(1, 1, net.hidden_layer_size),
+            )
 
             # forward + backward + optimize
             # TODO: Pass matrix
-            out = net(np.repeat(stock_inx, inputs.shape[0]), inputs)
-            loss = criterion(out[0], outputs[-1])
-            loss.backward()
+            y_pred = net(np.repeat(stock_inx, inputs.shape[0]), inputs)
+            single_loss = criterion(y_pred, labels)
+            single_loss.backward()
             optimizer.step()
 
             # print statistics
-            train_loss += loss.item()
-            tot_train_loss += loss.item()
+            train_loss += single_loss.item()
+            tot_train_loss += single_loss.item()
             if ((i + 1) % print_every) == 0:
                 print(
-                    "[{:4d}, {:5d}] loss: {:.3f}".format(
+                    "[{:4d}, {:5d}] loss: {:.8f}".format(
                         epoch + 1, i + 1, train_loss / print_every
                     )
                 )
                 train_loss = 0.0
         train_loss_tracking.append(tot_train_loss / i)
-
-        # test_loss = 0.0
-        # tot_test_loss = 0.0
-        # for i, data in enumerate(testloader, 0):
-        #     # get the inputs
-        #     inputs, labels = data
-        #
-        #     inputs = inputs.cuda()  # -- For GPU
-        #     labels = labels.cuda()  # -- For GPU
-        #
-        #     # zero the parameter gradients
-        #     optimizer.zero_grad()
-        #
-        #     # forward + backward + optimize
-        #     outputs = net(inputs)
-        #     loss = criterion(outputs, labels)
-        #     test_loss += loss.item()
-        # print('Test: [{:4d}] loss: {:.3f}'.format(epoch + 1, test_loss / len(testloader)))
-        # test_loss_tracking.append(test_loss / i)
 
     print("Finished Training")
     return train_loss_tracking
