@@ -40,7 +40,7 @@ class StockNN(nn.Module):
     def forward(self, stock_idx, price):
         assert stock_idx.shape == price.shape
         input_seq = torch.cat(
-            (self.embeds(stock_idx.T), price.view(price.shape[1], 1, -1)), dim=2
+            (self.embeds(stock_idx.T), price.view(price.shape[1], -1, 1)), dim=2
         )
 
         lstm_out, self.hidden_cell = self.lstm(input_seq, self.hidden_cell)
@@ -131,9 +131,9 @@ def split_data_to_windows(
             ]
         )
 
-        # assert x.shape[1] == y.shape[1]
+        assert x.shape[0] == y.shape[0]
         train_data.extend(
-            [(np.repeat(idx, len(price)).T, price, label) for price, label in zip(x, y)]
+            [(np.repeat(idx, len(price)), price, label) for price, label in zip(x, y)]
         )
 
     return train_data
