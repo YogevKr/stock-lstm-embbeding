@@ -82,10 +82,14 @@ def train(net, data_loader, num_of_epochs=10, print_every=200):
             # print statistics
             train_loss += single_loss.item()
             tot_train_loss += single_loss.item()
-            if ((batch_idx + 1) % print_every) == 0:
+            if (batch_idx + 1) % print_every == 0:
                 print(
-                    "[{:4d}, {:5d}] loss: {:.8f}".format(
-                        epoch + 1, batch_idx + 1, train_loss / print_every
+                    "Train Epoch: {} [{}/{} ({:.0f}%)] Batch Loss: {:.6f}".format(
+                        epoch,
+                        (batch_idx + 1) * data_loader.batch_size,
+                        len(data_loader.sampler),
+                        100.0 * (batch_idx + 1) * data_loader.batch_size / len(data_loader.dataset),
+                        train_loss / print_every,
                     )
                 )
                 train_loss = 0.0
