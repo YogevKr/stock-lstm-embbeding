@@ -80,9 +80,13 @@ def main(args):
 
     Path(processed_data_folder_path).mkdir(parents=True, exist_ok=True)
     train_df.to_csv(
-        os.path.join(processed_data_folder_path, "train_data.tsv"), sep="\t"
+        os.path.join(processed_data_folder_path, "train_data.tsv"),
+        sep="\t",
+        index=False,
     )
-    test_df.to_csv(os.path.join(processed_data_folder_path, "test_data.tsv"), sep="\t")
+    test_df.to_csv(
+        os.path.join(processed_data_folder_path, "test_data.tsv"), sep="\t", index=False
+    )
 
 
 if __name__ == "__main__":

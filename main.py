@@ -1,28 +1,23 @@
+import argparse
+import json
+from typing import Tuple, List
+
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-import pickle
+from torch.utils.data import Dataset, DataLoader
 
 torch.manual_seed(1)
-
-
-NUM_OF_STOCKS = 100  # TODO: Total 505
-EMBEDDING_SIZE = 8
-LSTM_HID_SIZE = 128
-INPUT_SIZE = 1
-BATCH_SIZE = 1
-
-# TODO: Dict that translates stock name to index
 
 
 class StockNN(nn.Module):
     def __init__(
         self,
-        num_of_stocks=NUM_OF_STOCKS,
+        num_of_stocks,
         input_size=1,
-        embedding_dim=EMBEDDING_SIZE,
+        embedding_dim=100,
         hidden_layer_size=100,
         output_size=1,
     ):
@@ -43,30 +38,28 @@ class StockNN(nn.Module):
         )
 
     def forward(self, stock_idx, price):
-        assert len(stock_idx) == len(price)
+        assert stock_idx.shape == price.shape
         input_seq = torch.cat(
-            (self.embeds(torch.tensor(stock_idx)), torch.FloatTensor(price)), dim=1
-        ).view(len(stock_idx), 1, -1)
+            (self.embeds(stock_idx.T), price.view(price.shape[1], 1, -1)), dim=2
+        )
 
         lstm_out, self.hidden_cell = self.lstm(input_seq, self.hidden_cell)
         predictions = self.fc(lstm_out.view(len(input_seq), -1))
         return predictions[-1]
 
 
-def train_nn(optimizer, net, data, num_of_epochs=10, print_every=200):
-    (x_train, y_train, x_test, y_test) = map(torch.FloatTensor, data)
-    stock_inx = 1  # TODO: Fixd
+def train(net, data_loader, num_of_epochs=10, print_every=200):
+
+    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    criterion = nn.MSELoss()
+
     train_loss_tracking = []
     test_loss_tracking = []
     for epoch in range(num_of_epochs):
         train_loss = 0.0
         tot_train_loss = 0.0
-        for i in range(len(x_train)):
 
-            # get the inputs
-            # inputs, labels = data
-            inputs = x_train[i]
-            labels = y_train[i]
+        for batch_idx, (symbols, inputs, labels) in enumerate(data_loader):
 
             # inputs = inputs.cuda()  # -- For GPU
             # labels = labels.cuda()  # -- For GPU
@@ -80,7 +73,7 @@ def train_nn(optimizer, net, data, num_of_epochs=10, print_every=200):
 
             # forward + backward + optimize
             # TODO: Pass matrix
-            y_pred = net(np.repeat(stock_inx, inputs.shape[0]), inputs)
+            y_pred = net(symbols, inputs)
             single_loss = criterion(y_pred, labels)
             single_loss.backward()
             optimizer.step()
@@ -88,37 +81,91 @@ def train_nn(optimizer, net, data, num_of_epochs=10, print_every=200):
             # print statistics
             train_loss += single_loss.item()
             tot_train_loss += single_loss.item()
-            if ((i + 1) % print_every) == 0:
+            if ((batch_idx + 1) % print_every) == 0:
                 print(
                     "[{:4d}, {:5d}] loss: {:.8f}".format(
-                        epoch + 1, i + 1, train_loss / print_every
+                        epoch + 1, batch_idx + 1, train_loss / print_every
                     )
                 )
                 train_loss = 0.0
-        train_loss_tracking.append(tot_train_loss / i)
+        # train_loss_tracking.append(tot_train_loss / batch_idx)
 
     print("Finished Training")
     return train_loss_tracking
 
 
-if __name__ == "__main__":
-    with open("./data/data.pickle", "rb") as f:
-        data = pickle.load(f, encoding="latin1")
-    net = StockNN()
+def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    train_df = pd.read_csv("./data/processed/train_data.tsv", sep="\t")
+    test_df = pd.read_csv("./data/processed/test_data.tsv", sep="\t")
 
-    NUM_OF_EPOCHS = 10
-    PRINT_EVERY = 10
-    LR = 0.001
+    return train_df, test_df
 
-    optimizer = optim.Adam(net.parameters(), lr=LR)
-    # criterion = nn.CrossEntropyLoss()
-    criterion = nn.MSELoss()
 
-    train_nn(optimizer, net, data, num_of_epochs=10, print_every=10)
+class TrainDataset(Dataset):
+    def __init__(self, data):
+        self.data = data
 
-    # (x_train, y_train, x_test, y_test) = data
-    # stock_idx = 1
-    #
-    # out, hidden = net([stock_idx for _ in range(len(x_train[0]))], x_train[0])
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+    def __len__(self):
+        return len(self.data)
+
+
+def split_data_to_windows(
+    train_data_df: pd.DataFrame, window_size: int, step_size: int = 1
+) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    train_data = []
+    for symbol, prices, idx in train_data_df.itertuples(index=False):
+        prices = list(map(np.float32, json.loads(prices)))
+        x = np.array(
+            [
+                prices[i : i + window_size]
+                for i in range(0, len(prices) - window_size, step_size)
+            ]
+        )
+        y = np.array(
+            [
+                prices[i + window_size]
+                for i in range(0, len(prices) - window_size, step_size)
+            ]
+        )
+
+        # assert x.shape[1] == y.shape[1]
+        train_data.extend(
+            [(np.repeat(idx, len(price)).T, price, label) for price, label in zip(x, y)]
+        )
+
+    return train_data
+
+
+def convert_unique_idx(df, column_name):
+    column_dict = {x: i for i, x in enumerate(df[column_name].unique())}
+    df["idx"] = df[column_name].map(column_dict)
+    df["idx"] = df["idx"].astype("int")
+    assert df["idx"].min() == 0
+    assert df["idx"].max() == len(column_dict) - 1
+    return df, column_dict
+
+
+def main(args):
+    train_data_df, test_data_df = load_data()
+    train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
+
+    train_data = split_data_to_windows(train_data_df, args.window_size)
+    dataset = TrainDataset(train_data)
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+
+    net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys()))
+    train(net, loader, num_of_epochs=10, print_every=10)
 
     print("Done")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--window_size", type=float, default=30)
+    parser.add_argument("--batch-size", type=int, default=1)
+
+    args, _ = parser.parse_known_args()
+    main(args)
