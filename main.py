@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+from sklearn.preprocessing import MinMaxScaler
 
 torch.manual_seed(1)
 
@@ -114,8 +115,9 @@ class TrainDataset(Dataset):
 
 def split_data_to_windows(
     train_data_df: pd.DataFrame, window_size: int, step_size: int = 1
-) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+) -> Tuple[List[Tuple[np.ndarray, np.ndarray, np.ndarray]], List[MinMaxScaler]]:
     train_data = []
+    scalers = []
     for symbol, prices, idx in train_data_df.itertuples(index=False):
         prices = list(map(np.float32, json.loads(prices)))
         x = np.array(
@@ -129,14 +131,22 @@ def split_data_to_windows(
                 prices[i + window_size]
                 for i in range(0, len(prices) - window_size, step_size)
             ]
-        )
+        ).reshape(-1, 1)
+        scaler = MinMaxScaler()
+        scaler.fit(np.concatenate((x, y), axis=1).T)
+        x_scaled = scaler.transform(x.T).T
+        y_scaled = scaler.transform(y.T).T
 
-        assert x.shape[0] == y.shape[0]
+        assert x_scaled.shape[0] == y_scaled.shape[0]
         train_data.extend(
-            [(np.repeat(idx, len(price)), price, label) for price, label in zip(x, y)]
+            [
+                (np.repeat(idx, len(price)), price, label)
+                for price, label in zip(x_scaled, y_scaled)
+            ]
         )
+        scalers.append(scaler)
 
-    return train_data
+    return train_data, scalers
 
 
 def convert_unique_idx(df, column_name):
@@ -152,7 +162,7 @@ def main(args):
     train_data_df, test_data_df = load_data()
     train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
 
-    train_data = split_data_to_windows(train_data_df, args.window_size)
+    train_data, _ = split_data_to_windows(train_data_df, args.window_size)
     dataset = TrainDataset(train_data)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
