@@ -44,8 +44,8 @@ class StockNN(nn.Module):
         )
 
         lstm_out, self.hidden_cell = self.lstm(input_seq, self.hidden_cell)
-        predictions = self.fc(lstm_out.view(len(input_seq), -1))
-        return predictions[-1]
+        predictions = self.fc(lstm_out[-1, :, :])
+        return predictions
 
 
 def train(net, data_loader, num_of_epochs=10, print_every=200):
@@ -67,14 +67,14 @@ def train(net, data_loader, num_of_epochs=10, print_every=200):
             # zero the parameter gradients
             optimizer.zero_grad()
             net.hidden_cell = (
-                torch.zeros(1, 1, net.hidden_layer_size),
-                torch.zeros(1, 1, net.hidden_layer_size),
+                torch.zeros(1, data_loader.batch_size, net.hidden_layer_size),
+                torch.zeros(1, data_loader.batch_size, net.hidden_layer_size),
             )
 
             # forward + backward + optimize
             # TODO: Pass matrix
             y_pred = net(symbols, inputs)
-            single_loss = criterion(y_pred, labels)
+            single_loss = criterion(y_pred, labels.view(-1, 1))
             single_loss.backward()
             optimizer.step()
 
@@ -165,7 +165,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--window_size", type=float, default=30)
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=150)
 
     args, _ = parser.parse_known_args()
     main(args)
