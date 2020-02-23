@@ -68,8 +68,8 @@ def train(net, data_loader, num_of_epochs=10, print_every=200):
             # zero the parameter gradients
             optimizer.zero_grad()
             net.hidden_cell = (
-                torch.zeros(1, data_loader.batch_size, net.hidden_layer_size),
-                torch.zeros(1, data_loader.batch_size, net.hidden_layer_size),
+                torch.zeros(1, inputs.shape[0], net.hidden_layer_size),
+                torch.zeros(1, inputs.shape[0], net.hidden_layer_size),
             )
 
             # forward + backward + optimize
@@ -166,7 +166,7 @@ def main(args):
     train_data_df, test_data_df = load_data()
     train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
 
-    train_data, _ = split_data_to_windows(train_data_df, args.window_size)
+    train_data, _ = split_data_to_windows(train_data_df, args.window_size, step_size=args.window_size)
     dataset = TrainDataset(train_data)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
