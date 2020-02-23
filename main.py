@@ -49,7 +49,24 @@ class StockNN(nn.Module):
         return predictions
 
 
-def train(net, data_loader, num_of_epochs=10, print_every=200):
+def inference(net: StockNN, last_window_data: np.array, inference_period: int):
+    net.eval()
+    for _ in range(inference_period):
+        seq = torch.from_numpy(last_window_data).float()
+        with torch.no_grad():
+            net.hidden = (
+                torch.zeros(1, last_window_data.shape[0], net.hidden_layer_size),
+                torch.zeros(1, last_window_data.shape[0], net.hidden_layer_size),
+            )
+            last_window_data = np.concatenate(last_window_data, net(seq).item())
+
+
+def train(
+    net: StockNN,
+    data_loader: DataLoader,
+    num_of_epochs: int = 10,
+    print_every: int = 200,
+):
 
     optimizer = optim.Adam(net.parameters(), lr=0.001)
     criterion = nn.MSELoss()
@@ -63,6 +80,7 @@ def train(net, data_loader, num_of_epochs=10, print_every=200):
         for batch_idx, (symbols, inputs, labels) in enumerate(data_loader):
 
             # zero the parameter gradients
+            net.train()
             optimizer.zero_grad()
             net.hidden_cell = (
                 torch.zeros(1, inputs.shape[0], net.hidden_layer_size),
@@ -86,7 +104,10 @@ def train(net, data_loader, num_of_epochs=10, print_every=200):
                         epoch,
                         (batch_idx + 1) * data_loader.batch_size,
                         len(data_loader.sampler),
-                        100.0 * (batch_idx + 1) * data_loader.batch_size / len(data_loader.dataset),
+                        100.0
+                        * (batch_idx + 1)
+                        * data_loader.batch_size
+                        / len(data_loader.dataset),
                         train_loss / print_every,
                     )
                 )
@@ -138,10 +159,10 @@ def split_data_to_windows(
         ).reshape(-1, 1)
 
         # Normalize Data
-        scaler = MinMaxScaler((-1,1))
+        scaler = MinMaxScaler((-1, 1))
         scaler.fit(np.concatenate((x, y), axis=1).T)
-        x_scaled = scaler.transform(x.T).T*10
-        y_scaled = scaler.transform(y.T).T*10
+        x_scaled = scaler.transform(x.T).T * 10
+        y_scaled = scaler.transform(y.T).T * 10
 
         assert x_scaled.shape[0] == y_scaled.shape[0]
 
@@ -169,7 +190,9 @@ def main(args):
     train_data_df, test_data_df = load_data()
     train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
 
-    train_data, _ = split_data_to_windows(train_data_df, args.window_size, step_size=args.window_size)
+    train_data, _ = split_data_to_windows(
+        train_data_df, args.window_size, step_size=args.window_size
+    )
     dataset = TrainDataset(train_data)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
