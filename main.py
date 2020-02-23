@@ -55,15 +55,12 @@ def train(net, data_loader, num_of_epochs=10, print_every=200):
     criterion = nn.MSELoss()
 
     train_loss_tracking = []
-    test_loss_tracking = []
+
     for epoch in range(num_of_epochs):
         train_loss = 0.0
         tot_train_loss = 0.0
 
         for batch_idx, (symbols, inputs, labels) in enumerate(data_loader):
-
-            # inputs = inputs.cuda()  # -- For GPU
-            # labels = labels.cuda()  # -- For GPU
 
             # zero the parameter gradients
             optimizer.zero_grad()
@@ -72,11 +69,12 @@ def train(net, data_loader, num_of_epochs=10, print_every=200):
                 torch.zeros(1, inputs.shape[0], net.hidden_layer_size),
             )
 
-            # forward + backward + optimize
-            # TODO: Pass matrix
+            # Forward
             y_pred = net(symbols, inputs)
+            # Backward
             single_loss = criterion(y_pred, labels.view(-1, 1))
             single_loss.backward()
+            # Back Prop
             optimizer.step()
 
             # print statistics
@@ -124,6 +122,8 @@ def split_data_to_windows(
     scalers = []
     for symbol, prices, idx in train_data_df.itertuples(index=False):
         prices = list(map(np.float32, json.loads(prices)))
+
+        # Split Data To Windows with step_size step
         x = np.array(
             [
                 prices[i : i + window_size]
@@ -136,12 +136,15 @@ def split_data_to_windows(
                 for i in range(0, len(prices) - window_size, step_size)
             ]
         ).reshape(-1, 1)
-        scaler = MinMaxScaler()
+
+        # Normalize Data
+        scaler = MinMaxScaler((-1,1))
         scaler.fit(np.concatenate((x, y), axis=1).T)
-        x_scaled = scaler.transform(x.T).T
-        y_scaled = scaler.transform(y.T).T
+        x_scaled = scaler.transform(x.T).T*10
+        y_scaled = scaler.transform(y.T).T*10
 
         assert x_scaled.shape[0] == y_scaled.shape[0]
+
         train_data.extend(
             [
                 (np.repeat(idx, len(price)), price, label)
@@ -171,9 +174,9 @@ def main(args):
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
     net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys()))
-    train(net, loader, num_of_epochs=10, print_every=10)
+    train_loss_tracking = train(net, loader, num_of_epochs=100, print_every=10)
 
-    print("Done")
+    print(train_loss_tracking)
 
 
 if __name__ == "__main__":
