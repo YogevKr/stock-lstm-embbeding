@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import MinMaxScaler
+import matplotlib.pyplot as plt
 
 torch.manual_seed(1)
 
@@ -91,7 +92,7 @@ def train(net, data_loader, num_of_epochs=10, print_every=200):
                     )
                 )
                 train_loss = 0.0
-        # train_loss_tracking.append(tot_train_loss / batch_idx)
+        train_loss_tracking.append(tot_train_loss / batch_idx)
 
     print("Finished Training")
     return train_loss_tracking
@@ -164,6 +165,37 @@ def convert_unique_idx(df, column_name):
     assert df["idx"].max() == len(column_dict) - 1
     return df, column_dict
 
+def visualization(net, symbol_idx_mapping):
+    from sklearn.manifold import TSNE
+    labels = list(symbol_idx_mapping.keys())
+    tokens = [net.embeds.weight[i].tolist() for i in range (len(labels))]
+    tsne_model = TSNE(perplexity=40, n_components=2, init='pca', n_iter=2500, random_state=23)
+
+    new_values = tsne_model.fit_transform(tokens)
+    x = []
+    y = []
+    for value in new_values:
+        x.append(value[0])
+        y.append(value[1])
+    plt.figure(figsize=(16, 16))
+    for i in range(len(x)):
+        plt.scatter(x[i], y[i])
+        plt.annotate(labels[i],
+                     xy=(x[i], y[i]),
+                     xytext=(5, 2),
+                     textcoords='offset points',
+                     ha='right',
+                     va='bottom')
+    plt.show()
+
+def compare_two_stocks(a_prices,b_prices, a_name, b_name):
+    plt.plot(a_prices, label=a_name)
+    plt.plot(b_prices, label=b_name)
+    plt.xlabel('Day')
+    plt.ylabel('Price')
+    plt.title(f'Compare between {a_name} and {b_name}')
+    plt.grid()
+    plt.legend(loc='best')
 
 def main(args):
     train_data_df, test_data_df = load_data()
@@ -174,7 +206,9 @@ def main(args):
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
     net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys()))
-    train_loss_tracking = train(net, loader, num_of_epochs=100, print_every=10)
+    train_loss_tracking = train(net, loader, num_of_epochs=1000, print_every=10)
+
+    visualization(net, symbol_idx_mapping)
 
     print(train_loss_tracking)
 
