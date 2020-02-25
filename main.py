@@ -211,7 +211,7 @@ def main(args):
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
     net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys()))
-    train_loss_tracking = train(net, loader, num_of_epochs=1000, print_every=10)
+    train_loss_tracking = train(net, loader, num_of_epochs=10, print_every=10)
 
     visualization(net, symbol_idx_mapping)
 
