@@ -18,7 +18,7 @@ class StockNN(nn.Module):
         self,
         num_of_stocks,
         input_size=1,
-        embedding_dim=100,
+        embedding_dim=16,
         hidden_layer_size=100,
         output_size=1,
     ):
@@ -179,7 +179,10 @@ def main(args):
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
     net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys()))
-    train_loss_tracking = train(net, loader, num_of_epochs=100, print_every=10)
+    train_loss_tracking = train(net, loader, num_of_epochs=1000, print_every=10)
+
+    import pickle
+    pickle.dump(net, open("net_embedding16.p","wb"))
 
     print(train_loss_tracking)
 
