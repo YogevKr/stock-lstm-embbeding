@@ -50,7 +50,27 @@ class StockNN(nn.Module):
         return predictions
 
 
-def train(net, data_loader, num_of_epochs=10, print_every=200):
+def inference(net: StockNN, last_window_data: np.array, inference_period: int):
+    data = last_window_data.copy()
+    net.eval()
+    for _ in range(inference_period):
+        seq = torch.from_numpy(data).float()
+        with torch.no_grad():
+            net.hidden = (
+                torch.zeros(1, data.shape[0], net.hidden_layer_size),
+                torch.zeros(1, data.shape[0], net.hidden_layer_size),
+            )
+            last_window_data = np.concatenate(data, net(seq).item())
+
+    return data[last_window_data.shape[0] :, :]
+
+
+def train(
+    net: StockNN,
+    data_loader: DataLoader,
+    num_of_epochs: int = 10,
+    print_every: int = 200,
+):
 
     optimizer = optim.Adam(net.parameters(), lr=0.001)
     criterion = nn.MSELoss()
@@ -64,6 +84,7 @@ def train(net, data_loader, num_of_epochs=10, print_every=200):
         for batch_idx, (symbols, inputs, labels) in enumerate(data_loader):
 
             # zero the parameter gradients
+            net.train()
             optimizer.zero_grad()
             net.hidden_cell = (
                 torch.zeros(1, inputs.shape[0], net.hidden_layer_size),
