@@ -50,15 +50,18 @@ class StockNN(nn.Module):
 
 
 def inference(net: StockNN, last_window_data: np.array, inference_period: int):
+    data = last_window_data.copy()
     net.eval()
     for _ in range(inference_period):
-        seq = torch.from_numpy(last_window_data).float()
+        seq = torch.from_numpy(data).float()
         with torch.no_grad():
             net.hidden = (
-                torch.zeros(1, last_window_data.shape[0], net.hidden_layer_size),
-                torch.zeros(1, last_window_data.shape[0], net.hidden_layer_size),
+                torch.zeros(1, data.shape[0], net.hidden_layer_size),
+                torch.zeros(1, data.shape[0], net.hidden_layer_size),
             )
-            last_window_data = np.concatenate(last_window_data, net(seq).item())
+            last_window_data = np.concatenate(data, net(seq).item())
+
+    return data[last_window_data.shape[0] :, :]
 
 
 def train(
