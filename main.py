@@ -50,21 +50,6 @@ class StockNN(nn.Module):
         return predictions
 
 
-def inference(net: StockNN, last_window_data: np.array, inference_period: int):
-    data = last_window_data.copy()
-    net.eval()
-    for _ in range(inference_period):
-        seq = torch.from_numpy(data).float()
-        with torch.no_grad():
-            net.hidden = (
-                torch.zeros(1, data.shape[0], net.hidden_layer_size),
-                torch.zeros(1, data.shape[0], net.hidden_layer_size),
-            )
-            last_window_data = np.concatenate(data, net(seq).item())
-
-    return data[last_window_data.shape[0] :, :]
-
-
 def train(
     net: StockNN,
     data_loader: DataLoader,
@@ -189,6 +174,7 @@ def convert_unique_idx(df, column_name):
     assert df["idx"].max() == len(column_dict) - 1
     return df, column_dict
 
+
 def visualization(net, symbol_idx_mapping):
     from sklearn.manifold import TSNE
     labels = list(symbol_idx_mapping.keys())
@@ -220,6 +206,7 @@ def compare_two_stocks(a_prices,b_prices, a_name, b_name):
     plt.title(f'Compare between {a_name} and {b_name}')
     plt.grid()
     plt.legend(loc='best')
+
 
 def main(args):
     train_data_df, test_data_df = load_data()
