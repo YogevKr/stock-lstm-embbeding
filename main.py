@@ -198,6 +198,7 @@ def visualization(net, symbol_idx_mapping):
                      va='bottom')
     plt.show()
 
+
 def compare_two_stocks(a_prices,b_prices, a_name, b_name):
     plt.plot(a_prices, label=a_name)
     plt.plot(b_prices, label=b_name)
