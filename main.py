@@ -178,7 +178,7 @@ def convert_unique_idx(df, column_name):
 def visualization(net, symbol_idx_mapping):
     from sklearn.manifold import TSNE
     labels = list(symbol_idx_mapping.keys())
-    tokens = [net.embeds.weight[i].tolist() for i in range (len(labels))]
+    tokens = [net.embeds.weight[i].tolist() for i in range(len(labels))]
     tsne_model = TSNE(perplexity=40, n_components=2, init='pca', n_iter=2500, random_state=23)
 
     new_values = tsne_model.fit_transform(tokens)
