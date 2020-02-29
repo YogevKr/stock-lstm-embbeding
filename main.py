@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 
 torch.manual_seed(1)
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class StockNN(nn.Module):
     def __init__(
@@ -77,14 +79,14 @@ def train(
             net.train()
             optimizer.zero_grad()
             net.hidden_cell = (
-                torch.zeros(1, inputs.shape[0], net.hidden_layer_size),
-                torch.zeros(1, inputs.shape[0], net.hidden_layer_size),
+                torch.zeros(1, inputs.shape[0], net.hidden_layer_size).to(device),
+                torch.zeros(1, inputs.shape[0], net.hidden_layer_size).to(device),
             )
 
             # Forward
-            y_pred = net(symbols, inputs)
+            y_pred = net(symbols.to(device), inputs.to(device))
             # Backward
-            single_loss = criterion(y_pred, labels.view(-1, 1))
+            single_loss = criterion(y_pred, labels.view(-1, 1).to(device))
             single_loss.backward()
             # Back Prop
             optimizer.step()
@@ -111,6 +113,7 @@ def train(
         from inference import calculate_test_set_error
         res = calculate_test_set_error(net, window_size, train_data_df, test_data_df, symbol_idx_mapping)
         test_error_tracking.append(np.mean([x["error"] for x in res.values()]))
+        print(test_error_tracking[-1])
 
     print("Finished Training")
     return train_loss_tracking
@@ -228,7 +231,7 @@ def main(args):
     train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
 
     train_data, _ = split_data_to_windows(
-        train_data_df, args.window_size, step_size=args.window_size
+        train_data_df, args.window_size, step_size=1
     )
     dataset = TrainDataset(train_data)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
@@ -236,7 +239,7 @@ def main(args):
     train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
     test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
 
-    net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys()))
+    net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys())).to(device)
     train_loss_tracking = train(
         net,
         loader,
@@ -256,7 +259,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--window_size", type=float, default=30)
-    parser.add_argument("--batch-size", type=int, default=150)
+    parser.add_argument("--batch-size", type=int, default=64)
 
     args, _ = parser.parse_known_args()
     main(args)

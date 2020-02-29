@@ -8,7 +8,7 @@ from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
-from main import StockNN, load_data, convert_unique_idx
+from main import StockNN, load_data, convert_unique_idx, device
 import json
 from collections import defaultdict
 
@@ -48,19 +48,19 @@ def inference(
     scaler.fit(np.array(data))
     data_scaled = scaler.transform(data) * 10
 
+    data_scaled_torch = torch.from_numpy(data_scaled).float().to(device)
+
     net.eval()
     for _ in range(inference_period):
-        window = np.array(data_scaled[-len(last_window_data) :]).reshape(-1, 1)
-        # Normalize Data
-        seq = torch.from_numpy(window).float().view(1, -1)
+        seq = data_scaled_torch[-len(last_window_data) :].view(1, -1)
         with torch.no_grad():
             net.hidden_cell = (
-                torch.zeros(1, 1, net.hidden_layer_size),
-                torch.zeros(1, 1, net.hidden_layer_size),
+                torch.zeros(1, 1, net.hidden_layer_size).to(device),
+                torch.zeros(1, 1, net.hidden_layer_size).to(device),
             )
-            data_scaled = np.concatenate((data_scaled, net(stock_idx, seq).numpy()))
+            data_scaled_torch = torch.cat((data_scaled_torch, net(stock_idx, seq)))
 
-    return scaler.inverse_transform(data_scaled[len(last_window_data) :]).reshape(-1)
+    return scaler.inverse_transform(data_scaled_torch[len(last_window_data) :].cpu().numpy()).reshape(-1)
 
 
 def calculate_error(y, y_hat):
@@ -91,7 +91,7 @@ def calculate_test_set_error(net, window_size, train_data_df, test_data_df, symb
         results[symbol]["y"] = y
         results[symbol]["y_hat"] = inference(
             net=net,
-            stock_idx=idx,
+            stock_idx=idx.view(1, -1).cuda(),
             last_window_data=train_last_window,
             inference_period=len(y),
         )
