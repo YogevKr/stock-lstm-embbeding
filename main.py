@@ -177,9 +177,12 @@ def convert_unique_idx(df, column_name):
 
 def visualization(net, symbol_idx_mapping):
     from sklearn.manifold import TSNE
+
     labels = list(symbol_idx_mapping.keys())
     tokens = [net.embeds.weight[i].tolist() for i in range(len(labels))]
-    tsne_model = TSNE(perplexity=40, n_components=2, init='pca', n_iter=2500, random_state=23)
+    tsne_model = TSNE(
+        perplexity=40, n_components=2, init="pca", n_iter=2500, random_state=23
+    )
 
     new_values = tsne_model.fit_transform(tokens)
     x = []
@@ -190,23 +193,25 @@ def visualization(net, symbol_idx_mapping):
     plt.figure(figsize=(16, 16))
     for i in range(len(x)):
         plt.scatter(x[i], y[i])
-        plt.annotate(labels[i],
-                     xy=(x[i], y[i]),
-                     xytext=(5, 2),
-                     textcoords='offset points',
-                     ha='right',
-                     va='bottom')
+        plt.annotate(
+            labels[i],
+            xy=(x[i], y[i]),
+            xytext=(5, 2),
+            textcoords="offset points",
+            ha="right",
+            va="bottom",
+        )
     plt.show()
 
 
-def compare_two_stocks(a_prices,b_prices, a_name, b_name):
+def compare_two_stocks(a_prices, b_prices, a_name, b_name):
     plt.plot(a_prices, label=a_name)
     plt.plot(b_prices, label=b_name)
-    plt.xlabel('Day')
-    plt.ylabel('Price')
-    plt.title(f'Compare between {a_name} and {b_name}')
+    plt.xlabel("Day")
+    plt.ylabel("Price")
+    plt.title(f"Compare between {a_name} and {b_name}")
     plt.grid()
-    plt.legend(loc='best')
+    plt.legend(loc="best")
 
 
 def main(args):
