@@ -63,23 +63,14 @@ def inference(
     return scaler.inverse_transform(data_scaled[len(last_window_data) :]).reshape(-1)
 
 
-def calculate_accuracy(y, y_hat):
+def calculate_error(y, y_hat):
     y = np.array(y) + 1
     y_hat = np.array(y_hat) + 1
     error_ = np.sqrt(np.mean(np.square((y - y_hat) / y)))
     return error_
 
 
-def main(args):
-    with open(args.trained_model_name, "rb") as f:
-        net: StockNN = pickle.load(f)
-
-    train_data_df, test_data_df = load_data()
-    train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
-
-    train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
-    test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
-
+def calculate_test_set_error(net, train_data_df, test_data_df, symbol_idx_mapping):
     train_last_windows = (
         train_data_df.set_index("symbol")["Close"]
         .apply(lambda x: x[-args.window_size :])
@@ -104,9 +95,22 @@ def main(args):
             last_window_data=train_last_window,
             inference_period=len(y),
         )
-        results[symbol]["error"] = calculate_accuracy(results[symbol]["y"], results[symbol]["y_hat"])
-        print(symbol, results[symbol]["error"])
+        results[symbol]["error"] = calculate_error(results[symbol]["y"], results[symbol]["y_hat"])
 
+    return results
+
+
+def main(args):
+    with open(args.trained_model_name, "rb") as f:
+        net: StockNN = pickle.load(f)
+
+    train_data_df, test_data_df = load_data()
+    train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
+
+    train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
+    test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
+
+    res = calculate_test_set_error(net, train_data_df, test_data_df, symbol_idx_mapping)
     pass
 
 
