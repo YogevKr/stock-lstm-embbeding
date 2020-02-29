@@ -78,6 +78,11 @@ def main(args):
         s_and_p_list_path, stocks_prices_folder_path, args.test_size
     )
 
+    valid_test_size_symbols = test_df[test_df["Close"].apply(len) > 300]["symbol"].unique()
+
+    train_df = train_df[train_df["symbol"].isin(valid_test_size_symbols)]
+    test_df = test_df[test_df["symbol"].isin(valid_test_size_symbols)]
+
     Path(processed_data_folder_path).mkdir(parents=True, exist_ok=True)
     train_df.to_csv(
         os.path.join(processed_data_folder_path, "train_data.tsv"),

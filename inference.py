@@ -4,11 +4,10 @@ import pickle
 import pandas as pd
 import torch
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
-from main import StockNN, load_data, convert_unique_idx, device
+from main import StockNN, load_data, convert_unique_idx, device, split_data_to_windows
 import json
 from collections import defaultdict
 
@@ -23,44 +22,34 @@ class TestDataset(Dataset):
     ):
         self.train_data = train_data
         self.test_data = test_data.set_index("symbol")
+        self.df = test_data
         self.symbol_idx_mapping = symbol_idx_mapping
         self.train_last_windows = train_last_windows
+        self.scaled_test_data = None
+        self.scalers = None
+
+        self.process_test_set()
+
+    def process_test_set(self):
+        self.scaled_test_data, self.scalers = split_data_to_windows(self.df, 30)
 
     def __getitem__(self, idx):
-        symbol = self.test_data.index[idx]
-        last_window = self.train_last_windows.get(symbol)
-        return (
-            symbol,  # Symbol
-            np.repeat(self.symbol_idx_mapping.get(symbol), len(last_window)),  # idx
-            last_window,  # Last window prices
-            self.test_data.loc[symbol]["Close"],  # y
-        )
+        return self.scaled_test_data[idx]
 
     def __len__(self):
-        return len(self.test_data.index)
+        return len(self.scaled_test_data)
 
 
 def inference(
-    net: StockNN, stock_idx: torch.Tensor, last_window_data: list, inference_period: int
+    net: StockNN, stock_idx: torch.Tensor, last_window_data: torch.Tensor
 ):
-    data = np.array(list(map(lambda x: float(x.numpy()), last_window_data.copy()))).reshape(-1, 1)
-    scaler = MinMaxScaler((-1, 1))
-    scaler.fit(np.array(data))
-    data_scaled = scaler.transform(data) * 10
-
-    data_scaled_torch = torch.from_numpy(data_scaled).float().to(device)
-
     net.eval()
-    for _ in range(inference_period):
-        seq = data_scaled_torch[-len(last_window_data) :].view(1, -1)
-        with torch.no_grad():
-            net.hidden_cell = (
-                torch.zeros(1, 1, net.hidden_layer_size).to(device),
-                torch.zeros(1, 1, net.hidden_layer_size).to(device),
-            )
-            data_scaled_torch = torch.cat((data_scaled_torch, net(stock_idx, seq)))
-
-    return scaler.inverse_transform(data_scaled_torch[len(last_window_data) :].cpu().numpy()).reshape(-1)
+    with torch.no_grad():
+        net.hidden_cell = (
+            torch.zeros(1, last_window_data.shape[0], net.hidden_layer_size).to(device),
+            torch.zeros(1, last_window_data.shape[0], net.hidden_layer_size).to(device),
+        )
+        return net(stock_idx, last_window_data)
 
 
 def calculate_error(y, y_hat):
@@ -84,18 +73,24 @@ def calculate_test_set_error(net, window_size, train_data_df, test_data_df, symb
         train_last_windows=train_last_windows,
     )
 
-    loader = DataLoader(test_set, batch_size=1, shuffle=False)
+    loader = DataLoader(test_set, batch_size=131_072, shuffle=False)
 
-    results = defaultdict(lambda: defaultdict())
-    for i, (symbol, idx, train_last_window, y) in tqdm(enumerate(loader)):
-        results[symbol]["y"] = y
-        results[symbol]["y_hat"] = inference(
+    results = defaultdict(lambda: defaultdict(list))
+    for i, (idx, last_window, y) in tqdm(enumerate(loader)):
+        r = inference(
             net=net,
-            stock_idx=idx.view(1, -1).cuda(),
-            last_window_data=train_last_window,
-            inference_period=len(y),
+            stock_idx=idx.to(device),
+            last_window_data=last_window.to(device),
         )
-        results[symbol]["error"] = calculate_error(results[symbol]["y"], results[symbol]["y_hat"])
+
+        r_ = r.cpu().numpy()
+        for j, idx_ in enumerate(idx):
+            sym_index = idx_[0].cpu().numpy().tolist()
+            results[sym_index]["y"].append(y[j])
+            results[sym_index]["y_hat"].append(r_[j])
+
+    for k in results.keys():
+        results[k]["error"] = calculate_error(y=results[k]["y"], y_hat=results[k]["y_hat"])
 
     return results
 
@@ -107,10 +102,13 @@ def main(args):
     train_data_df, test_data_df = load_data()
     train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
 
-    train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
-    test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
+    test_data_df["idx"] = test_data_df["symbol"].map(symbol_idx_mapping)
+    test_data_df["idx"] = test_data_df["idx"].astype("int")
 
-    res = calculate_test_set_error(net, args.window_size, train_data_df, test_data_df, symbol_idx_mapping)
+    train_data_df["Close"] = train_data_df["Close"].apply(json.loads)
+    test_data_df["Close"] = test_data_df["Close"].apply(json.loads)
+
+    res = calculate_test_set_error(net.to(device), args.window_size, train_data_df, test_data_df, symbol_idx_mapping)
     pass
 
 

@@ -21,7 +21,7 @@ class StockNN(nn.Module):
         self,
         num_of_stocks,
         input_size=1,
-        embedding_dim=16,
+        embedding_dim=2,
         hidden_layer_size=100,
         output_size=1,
     ):
@@ -56,7 +56,7 @@ def train(
     net: StockNN,
     data_loader: DataLoader,
     num_of_epochs: int = 10,
-    print_every: int = 200,
+    print_every: int = 5000,
     train_data_df=None,
     test_data_df=None,
     symbol_idx_mapping=None,
@@ -143,7 +143,7 @@ def split_data_to_windows(
     train_data = []
     scalers = []
     for symbol, prices, idx in train_data_df.itertuples(index=False):
-        prices = list(map(np.float32, json.loads(prices)))
+        prices = list(map(np.float32, prices))
 
         # Split Data To Windows with step_size step
         x = np.array(
@@ -159,11 +159,14 @@ def split_data_to_windows(
             ]
         ).reshape(-1, 1)
 
-        # Normalize Data
-        scaler = MinMaxScaler((-1, 1))
-        scaler.fit(np.concatenate((x, y), axis=1).T)
-        x_scaled = scaler.transform(x.T).T * 10
-        y_scaled = scaler.transform(y.T).T * 10
+        x_scaled = x / x[:, :1]
+        y_scaled = y / x[:, :1]
+        #
+        # # Normalize Data
+        # scaler = MinMaxScaler((-1, 1))
+        # scaler.fit(np.concatenate((x, y), axis=1).T)
+        # x_scaled = scaler.transform(x.T).T * 10
+        # y_scaled = scaler.transform(y.T).T * 10
 
         assert x_scaled.shape[0] == y_scaled.shape[0]
 
@@ -173,7 +176,8 @@ def split_data_to_windows(
                 for price, label in zip(x_scaled, y_scaled)
             ]
         )
-        scalers.append(scaler)
+        # scalers.append(scaler)
+        scalers.append(x[:, :1])
 
     return train_data, scalers
 
@@ -230,20 +234,23 @@ def main(args):
     train_data_df, test_data_df = load_data()
     train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
 
+    test_data_df["idx"] = test_data_df["symbol"].map(symbol_idx_mapping)
+    test_data_df["idx"] = test_data_df["idx"].astype("int")
+
+    train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
+    test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
+
     train_data, _ = split_data_to_windows(
         train_data_df, args.window_size, step_size=1
     )
     dataset = TrainDataset(train_data)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
-    train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
-    test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
-
     net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys())).to(device)
     train_loss_tracking = train(
         net,
         loader,
-        num_of_epochs=10,
+        num_of_epochs=15,
         print_every=10,
         train_data_df=train_data_df,
         test_data_df=test_data_df,
@@ -259,7 +266,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--window_size", type=float, default=30)
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--batch-size", type=int, default=24576)
 
     args, _ = parser.parse_known_args()
     main(args)
