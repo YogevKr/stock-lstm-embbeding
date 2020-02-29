@@ -43,27 +43,31 @@ class TestDataset(Dataset):
 def inference(
     net: StockNN, stock_idx: torch.Tensor, last_window_data: list, inference_period: int
 ):
-    data = list(map(lambda x: float(x.numpy()), last_window_data.copy()))
+    data = np.array(list(map(lambda x: float(x.numpy()), last_window_data.copy()))).reshape(-1, 1)
+    scaler = MinMaxScaler((-1, 1))
+    scaler.fit(np.array(data))
+    data_scaled = scaler.transform(data) * 10
+
     net.eval()
     for _ in range(inference_period):
-        window = np.array(data[-len(last_window_data) :]).reshape(-1, 1)
-
+        window = np.array(data_scaled[-len(last_window_data) :]).reshape(-1, 1)
         # Normalize Data
-        scaler = MinMaxScaler((-1, 1))
-        try:
-            scaler.fit(window)
-        except ValueError:
-            pass
-        window_scaled = scaler.transform(window) * 10
-        seq = torch.FloatTensor(window_scaled).view(1, -1)
+        seq = torch.from_numpy(window).float().view(1, -1)
         with torch.no_grad():
             net.hidden_cell = (
                 torch.zeros(1, 1, net.hidden_layer_size),
                 torch.zeros(1, 1, net.hidden_layer_size),
             )
-            data.append(float(scaler.inverse_transform(np.array([net(stock_idx, seq).item()]).reshape(1,-1))))
+            data_scaled = np.concatenate((data_scaled, net(stock_idx, seq).numpy()))
 
-    return data[len(last_window_data) :]
+    return scaler.inverse_transform(data_scaled[len(last_window_data) :]).reshape(-1)
+
+
+def calculate_accuracy(y, y_hat):
+    y = np.array(y) + 1
+    y_hat = np.array(y_hat) + 1
+    error_ = np.sqrt(np.mean(np.square((y - y_hat) / y)))
+    return error_
 
 
 def main(args):
@@ -100,6 +104,8 @@ def main(args):
             last_window_data=train_last_window,
             inference_period=len(y),
         )
+        results[symbol]["error"] = calculate_accuracy(results[symbol]["y"], results[symbol]["y_hat"])
+        print(symbol, results[symbol]["error"])
 
     pass
 
