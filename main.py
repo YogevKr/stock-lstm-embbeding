@@ -55,12 +55,17 @@ def train(
     data_loader: DataLoader,
     num_of_epochs: int = 10,
     print_every: int = 200,
+    train_data_df=None,
+    test_data_df=None,
+    symbol_idx_mapping=None,
+    window_size=None
 ):
 
     optimizer = optim.Adam(net.parameters(), lr=0.001)
     criterion = nn.MSELoss()
 
     train_loss_tracking = []
+    test_error_tracking = []
 
     for epoch in range(num_of_epochs):
         train_loss = 0.0
@@ -102,6 +107,10 @@ def train(
                 )
                 train_loss = 0.0
         train_loss_tracking.append(tot_train_loss / batch_idx)
+
+        from inference import calculate_test_set_error
+        res = calculate_test_set_error(net, window_size, train_data_df, test_data_df, symbol_idx_mapping)
+        test_error_tracking.append(np.mean([x["error"] for x in res.values()]))
 
     print("Finished Training")
     return train_loss_tracking
@@ -224,8 +233,20 @@ def main(args):
     dataset = TrainDataset(train_data)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
+    train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
+    test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
+
     net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys()))
-    train_loss_tracking = train(net, loader, num_of_epochs=10, print_every=10)
+    train_loss_tracking = train(
+        net,
+        loader,
+        num_of_epochs=10,
+        print_every=10,
+        train_data_df=train_data_df,
+        test_data_df=test_data_df,
+        symbol_idx_mapping=symbol_idx_mapping,
+        window_size=args.window_size
+    )
 
     visualization(net, symbol_idx_mapping)
 

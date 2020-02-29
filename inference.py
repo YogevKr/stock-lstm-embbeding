@@ -70,10 +70,10 @@ def calculate_error(y, y_hat):
     return error_
 
 
-def calculate_test_set_error(net, train_data_df, test_data_df, symbol_idx_mapping):
+def calculate_test_set_error(net, window_size, train_data_df, test_data_df, symbol_idx_mapping):
     train_last_windows = (
         train_data_df.set_index("symbol")["Close"]
-        .apply(lambda x: x[-args.window_size :])
+        .apply(lambda x: x[-window_size :])
         .to_dict()
     )
 
@@ -110,7 +110,7 @@ def main(args):
     train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
     test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
 
-    res = calculate_test_set_error(net, train_data_df, test_data_df, symbol_idx_mapping)
+    res = calculate_test_set_error(net, args.window_size, train_data_df, test_data_df, symbol_idx_mapping)
     pass
 
 
