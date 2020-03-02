@@ -318,7 +318,7 @@ def main(args):
 
     visualization(embedding_net, symbol_idx_mapping)
 
-    print(train_loss_tracking)
+    print(embedding_train_loss_tracking)
 
 
 if __name__ == "__main__":
