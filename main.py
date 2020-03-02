@@ -113,7 +113,8 @@ def train(
     learning_rate=0.001,
     evaluation_batch_size=1024,
     batch_size=1024,
-    scalers=None
+    scalers=None,
+    shuffle_samples=None
 ):
     writer = SummaryWriter(
         comment=f"NET_{type(net).__name__}_EPOCHS{num_of_epochs}_LR_{learning_rate}_BATCH_{batch_size}"
@@ -124,6 +125,7 @@ def train(
             "lr": learning_rate,
             "batch_size": batch_size,
             "epochs": num_of_epochs,
+            "shuffle_samples": shuffle_samples
         },
         {},
     )
@@ -176,11 +178,7 @@ def train(
                     )
                 )
 
-        writer.add_scalar(
-            "epochs_train_loss",
-            epoch_loss,
-            global_step=(epoch + 1),
-        )
+        writer.add_scalar("epochs_train_loss", epoch_loss, global_step=(epoch + 1))
         train_epoch_loss_tracking.append(epoch_loss)
 
         try:
@@ -204,7 +202,7 @@ def train(
         )
         mean_test_error = np.mean([x["error"] for x in res.values()])
         test_error_tracking.append(mean_test_error)
-        writer.add_scalar("mean_test_error", mean_test_error)
+        writer.add_scalar("mean_test_error", mean_test_error, global_step=(epoch + 1))
         print(test_error_tracking[-1])
 
     writer.add_hparams({}, {"final_mean_test_error": np.mean(test_error_tracking)})
@@ -214,7 +212,7 @@ def train(
         dict(
             train_epoch_loss_tracking=train_epoch_loss_tracking,
             test_error_tracking=test_error_tracking,
-            train_scalers=scalers
+            train_scalers=scalers,
         ),
         writer.log_dir,
     )
@@ -342,7 +340,9 @@ def main(args):
     train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
     test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
 
-    train_data, scalers = split_data_to_windows(train_data_df, args.window_size, step_size=1)
+    train_data, scalers = split_data_to_windows(
+        train_data_df, args.window_size, step_size=1
+    )
     dataset = TrainDataset(train_data)
     loader = DataLoader(
         dataset, batch_size=args.batch_size, shuffle=args.shuffle_samples
@@ -359,20 +359,21 @@ def main(args):
         hidden_layer_size=args.lstm_hidden_layer_size,
     ).to(device)
 
-    embedding_train_loss_tracking = train(
-        embedding_net,
-        loader,
-        num_of_epochs=args.num_of_epochs,
-        print_every_batches=args.print_every_batches,
-        train_data_df=train_data_df,
-        test_data_df=test_data_df,
-        symbol_idx_mapping=symbol_idx_mapping,
-        window_size=args.window_size,
-        learning_rate=args.learning_rate,
-        evaluation_batch_size=args.evaluation_batch_size,
-        batch_size=args.batch_size,
-        scalers=scalers
-    )
+    # embedding_train_loss_tracking = train(
+    #     embedding_net,
+    #     loader,
+    #     num_of_epochs=args.num_of_epochs,
+    #     print_every_batches=args.print_every_batches,
+    #     train_data_df=train_data_df,
+    #     test_data_df=test_data_df,
+    #     symbol_idx_mapping=symbol_idx_mapping,
+    #     window_size=args.window_size,
+    #     learning_rate=args.learning_rate,
+    #     evaluation_batch_size=args.evaluation_batch_size,
+    #     batch_size=args.batch_size,
+    #     scalers=scalers,
+    #     shuffle_samples=args.shuffle_samples
+    # )
 
     one_hot_train_loss_tracking = train(
         one_hot_net,
@@ -386,25 +387,26 @@ def main(args):
         learning_rate=args.learning_rate,
         evaluation_batch_size=args.evaluation_batch_size,
         batch_size=args.batch_size,
-        scalers=scalers
+        scalers=scalers,
+        shuffle_samples=args.shuffle_samples
     )
 
     visualization(embedding_net, symbol_idx_mapping)
 
-    print(embedding_train_loss_tracking)
+    # print(embedding_train_loss_tracking)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--window_size", type=int, default=30)
-    parser.add_argument("--batch-size", type=int, default=1024)
+    parser.add_argument("--batch-size", type=int, default=32_768)
     parser.add_argument("--embedding_dim", type=int, default=4)
     parser.add_argument("--lstm_hidden_layer_size", type=int, default=100)
     parser.add_argument("--learning_rate", type=float, default=0.001)
     parser.add_argument("--num_of_epochs", type=int, default=100)
     parser.add_argument("--print_every_batches", type=int, default=15)
     parser.add_argument("--evaluation_batch_size", type=int, default=1024)
-    parser.add_argument("--shuffle_samples", type=bool, default=True)
+    parser.add_argument("--shuffle_samples", type=bool, default=False)
 
     args, _ = parser.parse_known_args()
     main(args)
