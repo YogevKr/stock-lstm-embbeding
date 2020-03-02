@@ -113,6 +113,7 @@ def train(
     learning_rate=0.001,
     evaluation_batch_size=1024,
     batch_size=1024,
+    scalers=None
 ):
     writer = SummaryWriter(
         comment=f"NET_{type(net).__name__}_EPOCHS{num_of_epochs}_LR_{learning_rate}_BATCH_{batch_size}"
@@ -158,7 +159,7 @@ def train(
             writer.add_scalar(
                 "batch_train_loss",
                 loss.item(),
-                global_step=(epoch + 1) * (batch_idx + 1),
+                global_step=((epoch + 1) * (batch_idx + 1)),
             )
             epoch_loss += loss.item()
             if (batch_idx + 1) % print_every_batches == 0:
@@ -206,15 +207,16 @@ def train(
         writer.add_scalar("mean_test_error", mean_test_error)
         print(test_error_tracking[-1])
 
-    writer.add_hparams({"final_mean_test_error": np.mean(test_error_tracking)})
+    writer.add_hparams({}, {"final_mean_test_error": np.mean(test_error_tracking)})
 
     save_model(net, writer.log_dir)
     pickle_tracks(
         dict(
             train_epoch_loss_tracking=train_epoch_loss_tracking,
             test_error_tracking=test_error_tracking,
+            train_scalers=scalers
         ),
-        writer.log_dir
+        writer.log_dir,
     )
     print("Finished Training")
     writer.close()
@@ -340,7 +342,7 @@ def main(args):
     train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
     test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
 
-    train_data, _ = split_data_to_windows(train_data_df, args.window_size, step_size=1)
+    train_data, scalers = split_data_to_windows(train_data_df, args.window_size, step_size=1)
     dataset = TrainDataset(train_data)
     loader = DataLoader(
         dataset, batch_size=args.batch_size, shuffle=args.shuffle_samples
@@ -369,6 +371,7 @@ def main(args):
         learning_rate=args.learning_rate,
         evaluation_batch_size=args.evaluation_batch_size,
         batch_size=args.batch_size,
+        scalers=scalers
     )
 
     one_hot_train_loss_tracking = train(
@@ -383,6 +386,7 @@ def main(args):
         learning_rate=args.learning_rate,
         evaluation_batch_size=args.evaluation_batch_size,
         batch_size=args.batch_size,
+        scalers=scalers
     )
 
     visualization(embedding_net, symbol_idx_mapping)
@@ -397,7 +401,7 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_dim", type=int, default=4)
     parser.add_argument("--lstm_hidden_layer_size", type=int, default=100)
     parser.add_argument("--learning_rate", type=float, default=0.001)
-    parser.add_argument("--num_of_epochs", type=int, default=15)
+    parser.add_argument("--num_of_epochs", type=int, default=100)
     parser.add_argument("--print_every_batches", type=int, default=15)
     parser.add_argument("--evaluation_batch_size", type=int, default=1024)
     parser.add_argument("--shuffle_samples", type=bool, default=False)
