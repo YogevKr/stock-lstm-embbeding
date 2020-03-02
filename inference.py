@@ -7,7 +7,7 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
-from main import StockNN, load_data, convert_unique_idx, device, split_data_to_windows
+from main import EmbeddingLstm, load_data, convert_unique_idx, device, split_data_to_windows
 import json
 from collections import defaultdict
 
@@ -41,7 +41,7 @@ class TestDataset(Dataset):
 
 
 def inference(
-    net: StockNN, stock_idx: torch.Tensor, last_window_data: torch.Tensor
+    net: EmbeddingLstm, stock_idx: torch.Tensor, last_window_data: torch.Tensor
 ):
     net.eval()
     with torch.no_grad():
@@ -97,7 +97,7 @@ def calculate_test_set_error(net, window_size, train_data_df, test_data_df, symb
 
 def main(args):
     with open(args.trained_model_name, "rb") as f:
-        net: StockNN = pickle.load(f)
+        net: EmbeddingLstm = pickle.load(f)
 
     train_data_df, test_data_df = load_data()
     train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")

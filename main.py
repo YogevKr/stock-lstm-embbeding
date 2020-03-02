@@ -1,21 +1,23 @@
 import argparse
 import json
-from typing import Tuple, List
+from typing import List, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader, Dataset
 
 torch.manual_seed(1)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-class StockNN(nn.Module):
+class EmbeddingLstm(nn.Module):
     def __init__(
         self,
         num_of_stocks,
@@ -24,7 +26,7 @@ class StockNN(nn.Module):
         input_size=1,
         output_size=1,
     ):
-        super(StockNN, self).__init__()
+        super(EmbeddingLstm, self).__init__()
         self.hidden_layer_size = hidden_layer_size
 
         self.embeds = nn.Embedding(num_of_stocks, embedding_dim)
@@ -51,8 +53,47 @@ class StockNN(nn.Module):
         return predictions
 
 
+class OneHotLstm(nn.Module):
+    def __init__(
+        self, num_of_stocks, hidden_layer_size=100, input_size=1, output_size=1
+    ):
+        super(OneHotLstm, self).__init__()
+        self.hidden_layer_size = hidden_layer_size
+        self.num_of_stocks = num_of_stocks
+
+        self.lstm = nn.LSTM(
+            input_size=num_of_stocks + input_size,
+            hidden_size=hidden_layer_size,
+            num_layers=1,
+        )
+        self.fc = nn.Linear(hidden_layer_size, output_size)
+
+        self.hidden_cell = (
+            torch.zeros(1, 1, self.hidden_layer_size),
+            torch.zeros(1, 1, self.hidden_layer_size),
+        )
+
+    def forward(self, stock_idx, price):
+        assert stock_idx.shape == price.shape
+
+        # shape: [seq_len, batch_size, input_size]
+        input_seq = torch.cat(
+            (
+                F.one_hot(stock_idx, self.num_of_stocks).view(
+                    stock_idx.shape[1], -1, self.num_of_stocks
+                ).float(),
+                price.view(price.shape[1], -1, 1),
+            ),
+            dim=2,
+        )
+
+        lstm_out, self.hidden_cell = self.lstm(input_seq, self.hidden_cell)
+        predictions = self.fc(lstm_out[-1, :, :])
+        return predictions
+
+
 def train(
-    net: StockNN,
+    net: nn.Module,
     data_loader: DataLoader,
     num_of_epochs: int = 10,
     print_every_batches: int = 10,
@@ -240,13 +281,19 @@ def main(args):
     dataset = TrainDataset(train_data)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
-    net = StockNN(
+    embedding_net = EmbeddingLstm(
         num_of_stocks=len(symbol_idx_mapping.keys()),
         embedding_dim=args.embedding_dim,
         hidden_layer_size=args.lstm_hidden_layer_size,
     ).to(device)
-    train_loss_tracking = train(
-        net,
+
+    one_hot_net = OneHotLstm(
+        num_of_stocks=len(symbol_idx_mapping.keys()),
+        hidden_layer_size=args.lstm_hidden_layer_size,
+    ).to(device)
+
+    one_hot_train_loss_tracking = train(
+        one_hot_net,
         loader,
         num_of_epochs=args.num_of_epochs,
         print_every_batches=args.print_every_batches,
@@ -257,7 +304,19 @@ def main(args):
         learning_rate=args.learning_rate,
     )
 
-    visualization(net, symbol_idx_mapping)
+    embedding_train_loss_tracking = train(
+        embedding_net,
+        loader,
+        num_of_epochs=args.num_of_epochs,
+        print_every_batches=args.print_every_batches,
+        train_data_df=train_data_df,
+        test_data_df=test_data_df,
+        symbol_idx_mapping=symbol_idx_mapping,
+        window_size=args.window_size,
+        learning_rate=args.learning_rate,
+    )
+
+    visualization(embedding_net, symbol_idx_mapping)
 
     print(train_loss_tracking)
 
