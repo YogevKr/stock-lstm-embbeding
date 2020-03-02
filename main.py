@@ -79,9 +79,9 @@ class OneHotLstm(nn.Module):
         # shape: [seq_len, batch_size, input_size]
         input_seq = torch.cat(
             (
-                F.one_hot(stock_idx, self.num_of_stocks).view(
-                    stock_idx.shape[1], -1, self.num_of_stocks
-                ).float(),
+                F.one_hot(stock_idx, self.num_of_stocks)
+                .view(stock_idx.shape[1], -1, self.num_of_stocks)
+                .float(),
                 price.view(price.shape[1], -1, 1),
             ),
             dim=2,
@@ -102,6 +102,7 @@ def train(
     symbol_idx_mapping=None,
     window_size=30,
     learning_rate=0.001,
+    evaluation_batch_size=1024,
 ):
 
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
@@ -154,7 +155,12 @@ def train(
         from inference import calculate_test_set_error
 
         res = calculate_test_set_error(
-            net, window_size, train_data_df, test_data_df, symbol_idx_mapping
+            net,
+            window_size,
+            train_data_df,
+            test_data_df,
+            symbol_idx_mapping,
+            batch_size=evaluation_batch_size,
         )
         test_error_tracking.append(np.mean([x["error"] for x in res.values()]))
         print(test_error_tracking[-1])
@@ -302,6 +308,7 @@ def main(args):
         symbol_idx_mapping=symbol_idx_mapping,
         window_size=args.window_size,
         learning_rate=args.learning_rate,
+        evaluation_batch_size=args.evaluation_batch_size
     )
 
     embedding_train_loss_tracking = train(
@@ -314,6 +321,7 @@ def main(args):
         symbol_idx_mapping=symbol_idx_mapping,
         window_size=args.window_size,
         learning_rate=args.learning_rate,
+        evaluation_batch_size=args.evaluation_batch_size
     )
 
     visualization(embedding_net, symbol_idx_mapping)
@@ -324,12 +332,13 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--window_size", type=int, default=30)
-    parser.add_argument("--batch-size", type=int, default=2048)
+    parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--embedding_dim", type=int, default=2)
     parser.add_argument("--lstm_hidden_layer_size", type=int, default=100)
     parser.add_argument("--learning_rate", type=float, default=0.001)
     parser.add_argument("--num_of_epochs", type=int, default=15)
     parser.add_argument("--print_every_batches", type=int, default=15)
+    parser.add_argument("--evaluation_batch_size", type=int, default=1024)
 
     args, _ = parser.parse_known_args()
     main(args)

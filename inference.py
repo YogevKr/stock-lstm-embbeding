@@ -7,7 +7,13 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
-from main import EmbeddingLstm, load_data, convert_unique_idx, device, split_data_to_windows
+from main import (
+    EmbeddingLstm,
+    load_data,
+    convert_unique_idx,
+    device,
+    split_data_to_windows,
+)
 import json
 from collections import defaultdict
 
@@ -59,10 +65,12 @@ def calculate_error(y, y_hat):
     return error_
 
 
-def calculate_test_set_error(net, window_size, train_data_df, test_data_df, symbol_idx_mapping):
+def calculate_test_set_error(
+    net, window_size, train_data_df, test_data_df, symbol_idx_mapping, batch_size
+):
     train_last_windows = (
         train_data_df.set_index("symbol")["Close"]
-        .apply(lambda x: x[-window_size :])
+        .apply(lambda x: x[-window_size:])
         .to_dict()
     )
 
@@ -73,14 +81,12 @@ def calculate_test_set_error(net, window_size, train_data_df, test_data_df, symb
         train_last_windows=train_last_windows,
     )
 
-    loader = DataLoader(test_set, batch_size=131_072, shuffle=False)
+    loader = DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
     results = defaultdict(lambda: defaultdict(list))
     for i, (idx, last_window, y) in tqdm(enumerate(loader)):
         r = inference(
-            net=net,
-            stock_idx=idx.to(device),
-            last_window_data=last_window.to(device),
+            net=net, stock_idx=idx.to(device), last_window_data=last_window.to(device)
         )
 
         r_ = r.cpu().numpy()
@@ -90,7 +96,9 @@ def calculate_test_set_error(net, window_size, train_data_df, test_data_df, symb
             results[sym_index]["y_hat"].append(r_[j])
 
     for k in results.keys():
-        results[k]["error"] = calculate_error(y=results[k]["y"], y_hat=results[k]["y_hat"])
+        results[k]["error"] = calculate_error(
+            y=results[k]["y"], y_hat=results[k]["y_hat"]
+        )
 
     return results
 
@@ -108,7 +116,14 @@ def main(args):
     train_data_df["Close"] = train_data_df["Close"].apply(json.loads)
     test_data_df["Close"] = test_data_df["Close"].apply(json.loads)
 
-    res = calculate_test_set_error(net.to(device), args.window_size, train_data_df, test_data_df, symbol_idx_mapping)
+    res = calculate_test_set_error(
+        net.to(device),
+        args.window_size,
+        train_data_df,
+        test_data_df,
+        symbol_idx_mapping,
+        batch_size=args.batch_size,
+    )
     pass
 
 
