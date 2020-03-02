@@ -159,7 +159,7 @@ def train(
             writer.add_scalar(
                 "batch_train_loss",
                 loss.item(),
-                global_step=(epoch + 1) * len(data_loader.dataset) + batch_idx,
+                global_step=epoch * len(data_loader) + batch_idx,
             )
             epoch_loss += loss.item()
             if (batch_idx + 1) % print_every_batches == 0:
@@ -182,7 +182,6 @@ def train(
             global_step=(epoch + 1),
         )
         train_epoch_loss_tracking.append(epoch_loss)
-        epoch_loss = 0.0
 
         try:
             writer.add_embedding(
