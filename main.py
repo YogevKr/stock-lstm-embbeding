@@ -166,7 +166,7 @@ def train(
         print(test_error_tracking[-1])
 
     print("Finished Training")
-    return train_loss_tracking
+    return train_loss_tracking, test_error_tracking
 
 
 def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
