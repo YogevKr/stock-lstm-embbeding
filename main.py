@@ -8,7 +8,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 
 torch.manual_seed(1)
@@ -20,9 +19,9 @@ class StockNN(nn.Module):
     def __init__(
         self,
         num_of_stocks,
-        input_size=1,
         embedding_dim=2,
         hidden_layer_size=100,
+        input_size=1,
         output_size=1,
     ):
         super(StockNN, self).__init__()
@@ -56,14 +55,15 @@ def train(
     net: StockNN,
     data_loader: DataLoader,
     num_of_epochs: int = 10,
-    print_every: int = 5000,
+    print_every_batches: int = 10,
     train_data_df=None,
     test_data_df=None,
     symbol_idx_mapping=None,
-    window_size=None
+    window_size=30,
+    learning_rate=0.001,
 ):
 
-    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
     train_loss_tracking = []
@@ -94,7 +94,7 @@ def train(
             # print statistics
             train_loss += single_loss.item()
             tot_train_loss += single_loss.item()
-            if (batch_idx + 1) % print_every == 0:
+            if (batch_idx + 1) % print_every_batches == 0:
                 print(
                     "Train Epoch: {} [{}/{} ({:.0f}%)] Batch Loss: {:.6f}".format(
                         epoch,
@@ -104,14 +104,17 @@ def train(
                         * (batch_idx + 1)
                         * data_loader.batch_size
                         / len(data_loader.dataset),
-                        train_loss / print_every,
+                        train_loss / print_every_batches,
                     )
                 )
                 train_loss = 0.0
         train_loss_tracking.append(tot_train_loss / batch_idx)
 
         from inference import calculate_test_set_error
-        res = calculate_test_set_error(net, window_size, train_data_df, test_data_df, symbol_idx_mapping)
+
+        res = calculate_test_set_error(
+            net, window_size, train_data_df, test_data_df, symbol_idx_mapping
+        )
         test_error_tracking.append(np.mean([x["error"] for x in res.values()]))
         print(test_error_tracking[-1])
 
@@ -139,7 +142,7 @@ class TrainDataset(Dataset):
 
 def split_data_to_windows(
     train_data_df: pd.DataFrame, window_size: int, step_size: int = 1
-) -> Tuple[List[Tuple[np.ndarray, np.ndarray, np.ndarray]], List[MinMaxScaler]]:
+) -> Tuple[List[Tuple[np.ndarray, np.ndarray, np.ndarray]], List[np.ndarray]]:
     train_data = []
     scalers = []
     for symbol, prices, idx in train_data_df.itertuples(index=False):
@@ -161,12 +164,6 @@ def split_data_to_windows(
 
         x_scaled = x / x[:, :1]
         y_scaled = y / x[:, :1]
-        #
-        # # Normalize Data
-        # scaler = MinMaxScaler((-1, 1))
-        # scaler.fit(np.concatenate((x, y), axis=1).T)
-        # x_scaled = scaler.transform(x.T).T * 10
-        # y_scaled = scaler.transform(y.T).T * 10
 
         assert x_scaled.shape[0] == y_scaled.shape[0]
 
@@ -176,7 +173,6 @@ def split_data_to_windows(
                 for price, label in zip(x_scaled, y_scaled)
             ]
         )
-        # scalers.append(scaler)
         scalers.append(x[:, :1])
 
     return train_data, scalers
@@ -240,22 +236,25 @@ def main(args):
     train_data_df["Close"] = train_data_df["Close"].apply(lambda x: json.loads(x))
     test_data_df["Close"] = test_data_df["Close"].apply(lambda x: json.loads(x))
 
-    train_data, _ = split_data_to_windows(
-        train_data_df, args.window_size, step_size=1
-    )
+    train_data, _ = split_data_to_windows(train_data_df, args.window_size, step_size=1)
     dataset = TrainDataset(train_data)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
-    net = StockNN(num_of_stocks=len(symbol_idx_mapping.keys())).to(device)
+    net = StockNN(
+        num_of_stocks=len(symbol_idx_mapping.keys()),
+        embedding_dim=args.embedding_dim,
+        hidden_layer_size=args.lstm_hidden_layer_size,
+    ).to(device)
     train_loss_tracking = train(
         net,
         loader,
-        num_of_epochs=15,
-        print_every=10,
+        num_of_epochs=args.num_of_epochs,
+        print_every_batches=args.print_every_batches,
         train_data_df=train_data_df,
         test_data_df=test_data_df,
         symbol_idx_mapping=symbol_idx_mapping,
-        window_size=args.window_size
+        window_size=args.window_size,
+        learning_rate=args.learning_rate,
     )
 
     visualization(net, symbol_idx_mapping)
@@ -265,8 +264,13 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--window_size", type=float, default=30)
-    parser.add_argument("--batch-size", type=int, default=24576)
+    parser.add_argument("--window_size", type=int, default=30)
+    parser.add_argument("--batch-size", type=int, default=2048)
+    parser.add_argument("--embedding_dim", type=int, default=2)
+    parser.add_argument("--lstm_hidden_layer_size", type=int, default=100)
+    parser.add_argument("--learning_rate", type=float, default=0.001)
+    parser.add_argument("--num_of_epochs", type=int, default=15)
+    parser.add_argument("--print_every_batches", type=int, default=15)
 
     args, _ = parser.parse_known_args()
     main(args)
