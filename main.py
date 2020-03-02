@@ -1,7 +1,8 @@
 import argparse
 import json
+import os
 from typing import List, Tuple
-
+import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -11,6 +12,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
+
+from torch.utils.tensorboard import SummaryWriter
 
 torch.manual_seed(1)
 
@@ -92,6 +95,12 @@ class OneHotLstm(nn.Module):
         return predictions
 
 
+def pickle_tracks(data: dict, path_dir: str):
+    path = os.path.join(path_dir, "data.pickle")
+    with open(path, "wb") as f:
+        pickle.dump(data, f)
+
+
 def train(
     net: nn.Module,
     data_loader: DataLoader,
@@ -103,17 +112,29 @@ def train(
     window_size=30,
     learning_rate=0.001,
     evaluation_batch_size=1024,
+    batch_size=1024,
 ):
+    writer = SummaryWriter(
+        comment=f"NET_{type(net).__name__}_EPOCHS{num_of_epochs}_LR_{learning_rate}_BATCH_{batch_size}"
+    )
+    writer.add_hparams(
+        {
+            "net:": type(net).__name__,
+            "lr": learning_rate,
+            "batch_size": batch_size,
+            "epochs": num_of_epochs,
+        },
+        {},
+    )
 
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
-    train_loss_tracking = []
+    train_epoch_loss_tracking = []
     test_error_tracking = []
 
     for epoch in range(num_of_epochs):
-        train_loss = 0.0
-        tot_train_loss = 0.0
+        epoch_loss = 0.0
 
         for batch_idx, (symbols, inputs, labels) in enumerate(data_loader):
 
@@ -128,14 +149,18 @@ def train(
             # Forward
             y_pred = net(symbols.to(device), inputs.to(device))
             # Backward
-            single_loss = criterion(y_pred, labels.view(-1, 1).to(device))
-            single_loss.backward()
+            loss = criterion(y_pred, labels.view(-1, 1).to(device))
+            loss.backward()
             # Back Prop
             optimizer.step()
 
             # print statistics
-            train_loss += single_loss.item()
-            tot_train_loss += single_loss.item()
+            writer.add_scalar(
+                "batch_train_loss",
+                loss.item(),
+                global_step=(epoch + 1) * (batch_idx + 1),
+            )
+            epoch_loss += loss.item()
             if (batch_idx + 1) % print_every_batches == 0:
                 print(
                     "Train Epoch: {} [{}/{} ({:.0f}%)] Batch Loss: {:.6f}".format(
@@ -146,11 +171,25 @@ def train(
                         * (batch_idx + 1)
                         * data_loader.batch_size
                         / len(data_loader.dataset),
-                        train_loss / print_every_batches,
+                        loss.item(),
                     )
                 )
-                train_loss = 0.0
-        train_loss_tracking.append(tot_train_loss / batch_idx)
+
+        writer.add_scalar(
+            "epochs_train_loss",
+            epoch_loss / len(data_loader.dataset),
+            global_step=(epoch + 1),
+        )
+        train_epoch_loss_tracking.append(epoch_loss / len(data_loader.dataset))
+
+        try:
+            writer.add_embedding(
+                net.embeds.weight,
+                metadata=list(symbol_idx_mapping.keys()),
+                global_step=(epoch + 1),
+            )
+        except AttributeError:
+            pass
 
         from inference import calculate_test_set_error
 
@@ -162,11 +201,24 @@ def train(
             symbol_idx_mapping,
             batch_size=evaluation_batch_size,
         )
-        test_error_tracking.append(np.mean([x["error"] for x in res.values()]))
+        mean_test_error = np.mean([x["error"] for x in res.values()])
+        test_error_tracking.append(mean_test_error)
+        writer.add_scalar("mean_test_error", mean_test_error)
         print(test_error_tracking[-1])
 
+    writer.add_hparams({"final_mean_test_error": np.mean(test_error_tracking)})
+
+    save_model(net, writer.log_dir)
+    pickle_tracks(
+        dict(
+            train_epoch_loss_tracking=train_epoch_loss_tracking,
+            test_error_tracking=test_error_tracking,
+        ),
+        writer.log_dir
+    )
     print("Finished Training")
-    return train_loss_tracking, test_error_tracking
+    writer.close()
+    return train_epoch_loss_tracking, test_error_tracking
 
 
 def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -263,6 +315,11 @@ def visualization(net, symbol_idx_mapping):
     plt.show()
 
 
+def save_model(model, model_dir):
+    path = os.path.join(model_dir, "model.pth")
+    torch.save(model.cpu().state_dict(), path)
+
+
 def compare_two_stocks(a_prices, b_prices, a_name, b_name):
     plt.plot(a_prices, label=a_name)
     plt.plot(b_prices, label=b_name)
@@ -285,7 +342,9 @@ def main(args):
 
     train_data, _ = split_data_to_windows(train_data_df, args.window_size, step_size=1)
     dataset = TrainDataset(train_data)
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+    loader = DataLoader(
+        dataset, batch_size=args.batch_size, shuffle=args.shuffle_samples
+    )
 
     embedding_net = EmbeddingLstm(
         num_of_stocks=len(symbol_idx_mapping.keys()),
@@ -298,19 +357,6 @@ def main(args):
         hidden_layer_size=args.lstm_hidden_layer_size,
     ).to(device)
 
-    one_hot_train_loss_tracking = train(
-        one_hot_net,
-        loader,
-        num_of_epochs=args.num_of_epochs,
-        print_every_batches=args.print_every_batches,
-        train_data_df=train_data_df,
-        test_data_df=test_data_df,
-        symbol_idx_mapping=symbol_idx_mapping,
-        window_size=args.window_size,
-        learning_rate=args.learning_rate,
-        evaluation_batch_size=args.evaluation_batch_size
-    )
-
     embedding_train_loss_tracking = train(
         embedding_net,
         loader,
@@ -321,7 +367,22 @@ def main(args):
         symbol_idx_mapping=symbol_idx_mapping,
         window_size=args.window_size,
         learning_rate=args.learning_rate,
-        evaluation_batch_size=args.evaluation_batch_size
+        evaluation_batch_size=args.evaluation_batch_size,
+        batch_size=args.batch_size,
+    )
+
+    one_hot_train_loss_tracking = train(
+        one_hot_net,
+        loader,
+        num_of_epochs=args.num_of_epochs,
+        print_every_batches=args.print_every_batches,
+        train_data_df=train_data_df,
+        test_data_df=test_data_df,
+        symbol_idx_mapping=symbol_idx_mapping,
+        window_size=args.window_size,
+        learning_rate=args.learning_rate,
+        evaluation_batch_size=args.evaluation_batch_size,
+        batch_size=args.batch_size,
     )
 
     visualization(embedding_net, symbol_idx_mapping)
@@ -333,12 +394,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--window_size", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=1024)
-    parser.add_argument("--embedding_dim", type=int, default=2)
+    parser.add_argument("--embedding_dim", type=int, default=4)
     parser.add_argument("--lstm_hidden_layer_size", type=int, default=100)
     parser.add_argument("--learning_rate", type=float, default=0.001)
     parser.add_argument("--num_of_epochs", type=int, default=15)
     parser.add_argument("--print_every_batches", type=int, default=15)
     parser.add_argument("--evaluation_batch_size", type=int, default=1024)
+    parser.add_argument("--shuffle_samples", type=bool, default=False)
 
     args, _ = parser.parse_known_args()
     main(args)
