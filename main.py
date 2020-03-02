@@ -159,7 +159,7 @@ def train(
             writer.add_scalar(
                 "batch_train_loss",
                 loss.item(),
-                global_step=(epoch * batch_size + 1) * (batch_idx + 1),
+                global_step=(epoch + 1) * len(data_loader.dataset) + batch_idx,
             )
             epoch_loss += loss.item()
             if (batch_idx + 1) % print_every_batches == 0:
@@ -405,7 +405,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_of_epochs", type=int, default=100)
     parser.add_argument("--print_every_batches", type=int, default=15)
     parser.add_argument("--evaluation_batch_size", type=int, default=1024)
-    parser.add_argument("--shuffle_samples", type=bool, default=False)
+    parser.add_argument("--shuffle_samples", type=bool, default=True)
 
     args, _ = parser.parse_known_args()
     main(args)
