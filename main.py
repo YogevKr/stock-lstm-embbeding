@@ -12,8 +12,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-
 from torch.utils.tensorboard import SummaryWriter
+
+from visual import *
 
 torch.manual_seed(1)
 
@@ -218,6 +219,7 @@ def train(
     )
     print("Finished Training")
     writer.close()
+
     return train_epoch_loss_tracking, test_error_tracking
 
 
@@ -320,16 +322,6 @@ def save_model(model, model_dir):
     torch.save(model.cpu().state_dict(), path)
 
 
-def compare_two_stocks(a_prices, b_prices, a_name, b_name):
-    plt.plot(a_prices, label=a_name)
-    plt.plot(b_prices, label=b_name)
-    plt.xlabel("Day")
-    plt.ylabel("Price")
-    plt.title(f"Compare between {a_name} and {b_name}")
-    plt.grid()
-    plt.legend(loc="best")
-
-
 def main(args):
     train_data_df, test_data_df = load_data()
     train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
@@ -391,9 +383,7 @@ def main(args):
         shuffle_samples=args.shuffle_samples
     )
 
-    visualization(embedding_net, symbol_idx_mapping)
-
-    # print(embedding_train_loss_tracking)
+    two_dim_pca_map(state_dict, symbol_idx_mapping, perplexity=4)
 
 
 if __name__ == "__main__":
@@ -403,7 +393,7 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_dim", type=int, default=4)
     parser.add_argument("--lstm_hidden_layer_size", type=int, default=100)
     parser.add_argument("--learning_rate", type=float, default=0.001)
-    parser.add_argument("--num_of_epochs", type=int, default=15)
+    parser.add_argument("--num_of_epochs", type=int, default=3)
     parser.add_argument("--print_every_batches", type=int, default=15)
     parser.add_argument("--evaluation_batch_size", type=int, default=1024)
     parser.add_argument("--shuffle_samples", type=bool, default=False)
