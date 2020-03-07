@@ -377,22 +377,22 @@ def main(args):
         hidden_layer_size=args.lstm_hidden_layer_size,
     ).to(device)
 
-    # embedding_train_loss_tracking = train(
-    #     embedding_net,
-    #     loader,
-    #     num_of_epochs=args.num_of_epochs,
-    #     print_every_batches=args.print_every_batches,
-    #     train_data_df=train_data_df,
-    #     test_data_df=test_data_df,
-    #     symbol_idx_mapping=symbol_idx_mapping,
-    #     window_size=args.window_size,
-    #     learning_rate=args.learning_rate,
-    #     evaluation_batch_size=args.evaluation_batch_size,
-    #     batch_size=args.batch_size,
-    #     scalers=scalers,
-    #     shuffle_samples=args.shuffle_samples,
-    #     hidden_layer_size=args.lstm_hidden_layer_size,
-    # )
+    embedding_train_loss_tracking = train(
+        embedding_net,
+        loader,
+        num_of_epochs=args.num_of_epochs,
+        print_every_batches=args.print_every_batches,
+        train_data_df=train_data_df,
+        test_data_df=test_data_df,
+        symbol_idx_mapping=symbol_idx_mapping,
+        window_size=args.window_size,
+        learning_rate=args.learning_rate,
+        evaluation_batch_size=args.evaluation_batch_size,
+        batch_size=args.batch_size,
+        scalers=scalers,
+        shuffle_samples=args.shuffle_samples,
+        hidden_layer_size=args.lstm_hidden_layer_size,
+    )
 
     one_hot_train_loss_tracking = train(
         one_hot_net,
