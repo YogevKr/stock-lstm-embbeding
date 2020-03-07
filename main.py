@@ -30,6 +30,10 @@ class EmbeddingLstm(nn.Module):
         output_size=1,
     ):
         super(EmbeddingLstm, self).__init__()
+
+        self.num_of_stocks = num_of_stocks
+        self.embedding_dim = embedding_dim
+        self.model_type = type(EmbeddingLstm).__name__
         self.hidden_layer_size = hidden_layer_size
 
         self.embeds = nn.Embedding(num_of_stocks, embedding_dim)
@@ -61,6 +65,8 @@ class OneHotLstm(nn.Module):
         self, num_of_stocks, hidden_layer_size=100, input_size=1, output_size=1
     ):
         super(OneHotLstm, self).__init__()
+
+        self.model_type = type(EmbeddingLstm).__name__
         self.hidden_layer_size = hidden_layer_size
         self.num_of_stocks = num_of_stocks
 
@@ -95,7 +101,7 @@ class OneHotLstm(nn.Module):
         return predictions
 
 
-def pickle_tracks(data: dict, path_dir: str):
+def pickle_artifacts(data: dict, path_dir: str):
     path = os.path.join(path_dir, "data.pickle")
     with open(path, "wb") as f:
         pickle.dump(data, f)
@@ -114,27 +120,32 @@ def train(
     evaluation_batch_size=1024,
     batch_size=1024,
     scalers=None,
-    shuffle_samples=None
+    shuffle_samples=None,
+    hidden_layer_size=None,
 ):
     writer = SummaryWriter(
-        comment=f"NET_{type(net).__name__}_EPOCHS{num_of_epochs}_LR_{learning_rate}_BATCH_{batch_size}"
+        comment=f"_NET_{type(net).__name__}_EPOCHS_{num_of_epochs}_LR_{learning_rate}_HIDDEN_LAYERS_{hidden_layer_size}_BATCH_{batch_size}"
     )
+
+    optimizer = optim.RMSprop(net.parameters(), lr=learning_rate)
+    criterion = nn.MSELoss()
+
     writer.add_hparams(
         {
             "net:": type(net).__name__,
             "lr": learning_rate,
             "batch_size": batch_size,
             "epochs": num_of_epochs,
-            "shuffle_samples": shuffle_samples
+            "shuffle_samples": shuffle_samples,
+            "hidden_layer_size": hidden_layer_size,
+            "optimizer": type(optimizer).__name__,
         },
         {},
     )
 
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
-    criterion = nn.MSELoss()
-
     train_epoch_loss_tracking = []
     test_error_tracking = []
+    last_test_set_results = None
 
     for epoch in range(num_of_epochs):
         epoch_loss = 0.0
@@ -190,9 +201,11 @@ def train(
         except AttributeError:
             pass
 
+        save_model(net, writer.log_dir, epoch + 1)
+
         from inference import calculate_test_set_error
 
-        res = calculate_test_set_error(
+        test_set_results = calculate_test_set_error(
             net,
             window_size,
             train_data_df,
@@ -200,19 +213,24 @@ def train(
             symbol_idx_mapping,
             batch_size=evaluation_batch_size,
         )
-        mean_test_error = np.mean([x["error"] for x in res.values()])
+        mean_test_error = np.mean([x["error"] for x in test_set_results.values()])
         test_error_tracking.append(mean_test_error)
         writer.add_scalar("mean_test_error", mean_test_error, global_step=(epoch + 1))
         print(test_error_tracking[-1])
+        last_test_set_results = test_set_results
+
+        save_test_set_results(last_test_set_results, writer.log_dir)
 
     writer.add_hparams({}, {"final_mean_test_error": np.mean(test_error_tracking)})
 
-    save_model(net, writer.log_dir)
-    pickle_tracks(
+    pickle_artifacts(
         dict(
             train_epoch_loss_tracking=train_epoch_loss_tracking,
             test_error_tracking=test_error_tracking,
             train_scalers=scalers,
+            train_data_df=train_data_df,
+            test_data_df=test_data_df,
+            symbol_idx_mapping=symbol_idx_mapping,
         ),
         writer.log_dir,
     )
@@ -315,9 +333,17 @@ def visualization(net, symbol_idx_mapping):
     plt.show()
 
 
-def save_model(model, model_dir):
-    path = os.path.join(model_dir, "model.pth")
-    torch.save(model.cpu().state_dict(), path)
+def save_model(model, model_dir, epoch_number):
+    dir_path = os.path.join(model_dir, "model", str(epoch_number))
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+    path = os.path.join(dir_path, "model.pth")
+    torch.save(model.state_dict(), path)
+
+
+def save_test_set_results(results, root_dir_path):
+    with open(os.path.join(root_dir_path, "test_results.pickle"), "wb") as f:
+        pickle.dump(dict(results), f)
 
 
 def compare_two_stocks(a_prices, b_prices, a_name, b_name):
@@ -359,21 +385,22 @@ def main(args):
         hidden_layer_size=args.lstm_hidden_layer_size,
     ).to(device)
 
-    embedding_train_loss_tracking = train(
-        embedding_net,
-        loader,
-        num_of_epochs=args.num_of_epochs,
-        print_every_batches=args.print_every_batches,
-        train_data_df=train_data_df,
-        test_data_df=test_data_df,
-        symbol_idx_mapping=symbol_idx_mapping,
-        window_size=args.window_size,
-        learning_rate=args.learning_rate,
-        evaluation_batch_size=args.evaluation_batch_size,
-        batch_size=args.batch_size,
-        scalers=scalers,
-        shuffle_samples=args.shuffle_samples
-    )
+    # embedding_train_loss_tracking = train(
+    #     embedding_net,
+    #     loader,
+    #     num_of_epochs=args.num_of_epochs,
+    #     print_every_batches=args.print_every_batches,
+    #     train_data_df=train_data_df,
+    #     test_data_df=test_data_df,
+    #     symbol_idx_mapping=symbol_idx_mapping,
+    #     window_size=args.window_size,
+    #     learning_rate=args.learning_rate,
+    #     evaluation_batch_size=args.evaluation_batch_size,
+    #     batch_size=args.batch_size,
+    #     scalers=scalers,
+    #     shuffle_samples=args.shuffle_samples,
+    #     hidden_layer_size=args.lstm_hidden_layer_size,
+    # )
 
     one_hot_train_loss_tracking = train(
         one_hot_net,
@@ -388,7 +415,8 @@ def main(args):
         evaluation_batch_size=args.evaluation_batch_size,
         batch_size=args.batch_size,
         scalers=scalers,
-        shuffle_samples=args.shuffle_samples
+        shuffle_samples=args.shuffle_samples,
+        hidden_layer_size=args.lstm_hidden_layer_size,
     )
 
     visualization(embedding_net, symbol_idx_mapping)
@@ -401,12 +429,12 @@ if __name__ == "__main__":
     parser.add_argument("--window_size", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--embedding_dim", type=int, default=4)
-    parser.add_argument("--lstm_hidden_layer_size", type=int, default=100)
-    parser.add_argument("--learning_rate", type=float, default=0.001)
-    parser.add_argument("--num_of_epochs", type=int, default=15)
+    parser.add_argument("--lstm_hidden_layer_size", type=int, default=512)
+    parser.add_argument("--learning_rate", type=float, default=0.0001)
+    parser.add_argument("--num_of_epochs", type=int, default=30)
     parser.add_argument("--print_every_batches", type=int, default=15)
     parser.add_argument("--evaluation_batch_size", type=int, default=1024)
-    parser.add_argument("--shuffle_samples", type=bool, default=False)
+    parser.add_argument("--shuffle_samples", type=bool, default=True)
 
     args, _ = parser.parse_known_args()
     main(args)

@@ -1,4 +1,5 @@
 import argparse
+import os
 import pickle
 
 import pandas as pd
@@ -13,7 +14,7 @@ from main import (
     convert_unique_idx,
     device,
     split_data_to_windows,
-)
+    OneHotLstm)
 import json
 from collections import defaultdict
 
@@ -104,24 +105,27 @@ def calculate_test_set_error(
 
 
 def main(args):
-    with open(args.trained_model_name, "rb") as f:
-        net: EmbeddingLstm = pickle.load(f)
+    state_dict = torch.load(args.artifacts_dir, map_location=device)
 
-    train_data_df, test_data_df = load_data()
-    train_data_df, symbol_idx_mapping = convert_unique_idx(train_data_df, "symbol")
+    if state_dict.get("model_type") == "EmbeddingLstm":
+        net = EmbeddingLstm(452)
+    elif state_dict.get("model_type") == "OneHotLstm":
+        net = OneHotLstm(452)
+    else:
+        net = EmbeddingLstm(452)
 
-    test_data_df["idx"] = test_data_df["symbol"].map(symbol_idx_mapping)
-    test_data_df["idx"] = test_data_df["idx"].astype("int")
+    net.load_state_dict(state_dict)
 
-    train_data_df["Close"] = train_data_df["Close"].apply(json.loads)
-    test_data_df["Close"] = test_data_df["Close"].apply(json.loads)
+    artifacts_path = os.path.join(args.artifacts_dir, "data.pickle")
+    with open(artifacts_path, "rb") as f:
+        train_artifacts = pickle.load(f)
 
     res = calculate_test_set_error(
         net.to(device),
         args.window_size,
-        train_data_df,
-        test_data_df,
-        symbol_idx_mapping,
+        train_artifacts.get("train_data_df"),
+        train_artifacts.get("test_data_df"),
+        train_artifacts.get("symbol_idx_mapping"),
         batch_size=args.batch_size,
     )
     pass
@@ -132,8 +136,17 @@ if __name__ == "__main__":
     parser.add_argument("--window_size", type=float, default=30)
     parser.add_argument("--batch-size", type=int, default=150)
     parser.add_argument(
-        "--trained_model_name", type=str, default="./res/1000Epochs_w_emb_net.pkl"
+        "--artifacts_dir",
+        type=str,
+        default="./runs/Mar06_09-07-03_ip-172-31-39-84NET_EmbeddingLstm_EPOCHS50_LR_0.001_BATCH_1024/",
     )
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default="model/17/model.pth",
+    )
+
+    parser.add_argument("--embedding", type=bool, default=True)
 
     args, _ = parser.parse_known_args()
     main(args)
