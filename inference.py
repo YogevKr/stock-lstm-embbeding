@@ -105,7 +105,8 @@ def calculate_test_set_error(
 
 
 def main(args):
-    state_dict = torch.load(args.artifacts_dir, map_location=device)
+    model_path = os.path.join(args.artifacts_dir, args.model_path)
+    state_dict = torch.load(model_path, map_location=device)
 
     if state_dict.get("model_type") == "EmbeddingLstm":
         net = EmbeddingLstm(452)
