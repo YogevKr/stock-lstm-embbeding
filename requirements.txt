@@ -1,4 +1,4 @@
-jupyterlab==1.2.6
+jupyterlab==1.2.21
 torch==1.4.0
 kaggle
 pandas==1.0.1
